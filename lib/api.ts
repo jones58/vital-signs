@@ -23,6 +23,28 @@ async function fetchAPI(
   return json.data;
 }
 
+// Add this helper function at the top
+async function fetchAllPosts(
+  query: string,
+  after: string | null = null
+): Promise<any[]> {
+  const data = await fetchAPI(query, {
+    variables: {
+      after,
+    },
+  });
+
+  const edges = data?.posts?.edges || [];
+  const pageInfo = data?.posts?.pageInfo;
+
+  if (pageInfo?.hasNextPage) {
+    const nextPosts = await fetchAllPosts(query, pageInfo.endCursor);
+    return [...edges, ...nextPosts];
+  }
+
+  return edges;
+}
+
 export async function getPreviewPost(id, idType = "DATABASE_ID") {
   const data = await fetchAPI(
     `
@@ -55,11 +77,19 @@ export async function getAllPostsWithSlug() {
   return data?.posts;
 }
 
+// Modify getAllPostsForHome to use pagination
 export async function getAllPostsForHome(preview) {
-  const data = await fetchAPI(
-    `
-    query AllPosts {
-      posts(first: 10000, where: { orderby: { field: DATE, order: DESC } }) {
+  const query = `
+    query AllPosts($after: String) {
+      posts(
+        first: 100,
+        after: $after,
+        where: { orderby: { field: DATE, order: DESC } }
+      ) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
         edges {
           node {
             title
@@ -80,16 +110,10 @@ export async function getAllPostsForHome(preview) {
         }
       }
     }
-  `,
-    {
-      variables: {
-        onlyEnabled: !preview,
-        preview,
-      },
-    }
-  );
+  `;
 
-  return data?.posts;
+  const edges = await fetchAllPosts(query);
+  return { edges };
 }
 
 export async function getPostAndMorePosts(slug) {
@@ -241,26 +265,48 @@ export async function getEventsPageContent(eventsPageSlug = "events") {
   return { content, featuredImage };
 }
 
+// Modify getCategories to include posts count and pagination
 export async function getCategories() {
   const data = await fetchAPI(`
-query allcategories {
-  categories(first: 10000) {
-    edges {
-      node {
-        name
+    query AllCategories {
+      categories(first: 100) {
+        edges {
+          node {
+            name
+            count
+            posts(first: 100) {
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+              edges {
+                node {
+                  title
+                  slug
+                }
+              }
+            }
+          }
+        }
       }
     }
-  }
-}
-`);
+  `);
   return data?.categories?.edges || [];
 }
 
+// Modify getAllPDFs to use pagination
 export async function getAllPDFs() {
-  const data = await fetchAPI(
-    `
-    query AllPosts {
-      posts(first: 10000, where: { orderby: { field: DATE, order: DESC }, categoryName: "Issues" }) {
+  const query = `
+    query AllPDFs($after: String) {
+      posts(
+        first: 100,
+        after: $after,
+        where: { orderby: { field: DATE, order: DESC }, categoryName: "Issues" }
+      ) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
         edges {
           node {
             title
@@ -281,8 +327,8 @@ export async function getAllPDFs() {
         }
       }
     }
-  `
-  );
+  `;
 
-  return data?.posts;
+  const edges = await fetchAllPosts(query);
+  return { edges };
 }
